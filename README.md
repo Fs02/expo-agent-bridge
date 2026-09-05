@@ -21,14 +21,21 @@ Give AI coding agents (Antigravity, Cursor, Claude Code, Windsurf, Devin) comple
 
 ## 🚀 Quickstart
 
-### 1. Install as a dev dependency in your Expo project
+### 1. Install in your Expo project
 
 ```bash
 # Using npm
-npm install --save-dev expo-agent-bridge react-native-view-shot
+npm install expo-agent-bridge react-native-view-shot
 
 # Using yarn
-yarn add --dev expo-agent-bridge react-native-view-shot
+yarn add expo-agent-bridge react-native-view-shot
+```
+
+For a local sibling checkout of this repository, install the bridge explicitly
+from that checkout:
+
+```bash
+yarn add expo-agent-bridge@file:../expo-agent-bridge react-native-view-shot
 ```
 
 ### 2. Initialize Agent Config & Skills
@@ -41,7 +48,7 @@ npx expo-agent-bridge init
 
 The default Antigravity profile generates:
 - `.agents/mcp_config.json` (MCP server configuration)
-- `.agents/skills/expo-agent-bridge/SKILL.md` (instructions for AI agents)
+- `.agents/skills/expo-agent-bridge/SKILL.md` (MCP-first instructions with CLI fallback)
 
 Choose another supported agent profile when needed:
 
@@ -51,16 +58,29 @@ npx expo-agent-bridge init --agent cursor
 npx expo-agent-bridge init --agent windsurf
 ```
 
+If multiple Expo/Metro servers are running, assign each project its own port
+and pass it during initialization:
+
+```bash
+npx expo-agent-bridge init --metro-port 8082
+```
+
+Start that app on the same port, for example `npx expo start --port 8082`.
+The generated MCP configuration pins the bridge to that project’s port.
+
 Each profile writes its MCP configuration and skill to that agent's project directory.
-For an unsupported or custom agent, specify both locations directly:
+For an unsupported or custom agent, specify the skill location directly:
 
 ```bash
 npx expo-agent-bridge init \
-  --mcp-config .my-agent/mcp.json \
   --skills-dir .my-agent/skills
 ```
 
 Existing bridge skills are left untouched; pass `--force` to replace one.
+
+MCP is enabled by default, but the generated skill falls back to the direct CLI
+when an MCP call is unavailable or cannot reach the running app. To configure a
+CLI-only project, use `npx expo-agent-bridge init --no-mcp`.
 
 ### 3. Mount in your Root Layout
 
@@ -91,22 +111,40 @@ Scan the QR code with your iPhone/Android device. Your AI agent can now immediat
 
 ---
 
-## 🛠️ MCP Tools
+## 🛠️ Bridge Commands
 
-| Tool | Description |
+| Command | Description |
 |---|---|
-| `get_screenshot()` | Captures current mobile screen as PNG base64 |
-| `get_logs(level?, limit?)` | Streams recent `console.error`, `console.warn`, and exceptions |
-| `reload()` | Reloads the JS bundle on device |
-| `get_route()` | Returns active route, pathname, and segments from Expo Router |
-| `get_elements()` | Lists all mounted interactive elements |
-| `get_state()` | Inspects exposed custom state |
-| `reset_storage()` | Clears AsyncStorage to test first-time launch |
-| `open_dev_menu()` | Opens React Native developer menu on device |
-| `navigate(route)` | Pushes an Expo Router route |
-| `tap(target)` | Taps element matching `testID` |
-| `scroll(direction, amount?)` | Scrolls active scroll view up/down |
-| `type_text(target, text)` | Types text into TextInput |
+| `screenshot [file]` | Captures current mobile screen as PNG |
+| `logs` | Streams recent errors, warnings, and exceptions |
+| `reload` | Reloads the app bundle on device |
+| `route` | Returns the active route |
+| `elements` | Lists mounted interactive elements |
+| `state` | Inspects exposed custom state |
+| `reset-storage` | Clears AsyncStorage |
+| `dev-menu` | Opens the developer menu |
+| `navigate <route>` | Navigates to an Expo Router route |
+| `tap <testID>` | Taps an element by test ID |
+| `scroll <up\|down> [amount]` | Scrolls the active view |
+| `type-text <testID> <text>` | Types text into a TextInput |
+
+## 🖥️ Direct CLI Commands
+
+The bridge can also be used directly from a shell without creating a temporary
+JavaScript client:
+
+```bash
+npx expo-agent-bridge screenshot /tmp/screen.png
+npx expo-agent-bridge logs
+npx expo-agent-bridge route
+npx expo-agent-bridge navigate /settings
+npx expo-agent-bridge tap settings-button
+npx expo-agent-bridge scroll down 300
+npx expo-agent-bridge type-text search-input "Mecca"
+```
+
+These commands are the supported fallback for the MCP tools. They use the same
+live app connection and do not require temporary JavaScript files.
 
 ---
 
@@ -145,7 +183,7 @@ AI Coding Agent (Antigravity / Cursor / Claude)
       │
       │ MCP stdio protocol
       ▼
-npx expo-agent-bridge mcp
+npx --no-install expo-agent-bridge mcp
       │
       │ WebSocket (ws://localhost:8081/expo-dev-plugins/broadcast)
       ▼

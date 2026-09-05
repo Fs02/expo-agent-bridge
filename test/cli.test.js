@@ -15,7 +15,7 @@ function withProject(callback) {
   }
 }
 
-test('init keeps existing MCP servers and uses the Antigravity profile by default', () => {
+test('init configures MCP and uses the Antigravity profile by default', () => {
   withProject((project) => {
     const configPath = path.join(project, '.agents', 'mcp_config.json');
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
@@ -27,7 +27,7 @@ test('init keeps existing MCP servers and uses the Antigravity profile by defaul
     assert.deepEqual(config.mcpServers.existing, { command: 'existing' });
     assert.deepEqual(config.mcpServers['expo-agent-bridge'], {
       command: 'npx',
-      args: ['expo-agent-bridge', 'mcp'],
+      args: ['--no-install', 'expo-agent-bridge', 'mcp'],
     });
     const skillPath = path.join(project, '.agents', 'skills', 'expo-agent-bridge', 'SKILL.md');
     assert.match(fs.readFileSync(skillPath, 'utf8'), /Attach to that existing[\s\S]*do \*\*not\*\* run `expo start`/);
@@ -40,6 +40,19 @@ test('init writes the selected Cursor MCP and skill configuration', () => {
 
     assert.ok(fs.existsSync(path.join(project, '.cursor', 'mcp.json')));
     assert.ok(fs.existsSync(path.join(project, '.cursor', 'skills', 'expo-agent-bridge', 'SKILL.md')));
+  });
+});
+
+test('init pins MCP to a project-specific Metro port and supports CLI-only mode', () => {
+  withProject((project) => {
+    runInit(project, parseInitOptions(['--metro-port', '8082']));
+    const configPath = path.join(project, '.agents', 'mcp_config.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    assert.deepEqual(config.mcpServers['expo-agent-bridge'].env, { EXPO_METRO_PORT: '8082' });
+    assert.ok(fs.existsSync(path.join(project, '.agents', 'skills', 'expo-agent-bridge', 'SKILL.md')));
+
+    runInit(project, parseInitOptions(['--no-mcp', '--force']));
+    assert.equal(fs.existsSync(configPath), false);
   });
 });
 

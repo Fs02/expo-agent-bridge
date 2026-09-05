@@ -18,22 +18,43 @@ server first; do **not** run `expo start`, restart Metro, or create a second dev
 developer explicitly asks. If the bridge cannot connect, report the connection failure and ask the
 developer to start or expose the server.
 
-## Available Tools
+## Transport fallback
 
-| Tool | Description |
+Use the MCP tools when they are available. If an MCP call is unavailable, times
+out, or cannot reach the Expo server, immediately use the equivalent direct CLI
+command below. Do not create a temporary JavaScript client. Both transports use
+the same `expo-agent-bridge` protocol and control the same running app.
+
+## Direct CLI Commands
+
+For one-off shell actions, use the installed CLI instead of creating a temporary
+JavaScript client:
+
+```bash
+npx --no-install expo-agent-bridge screenshot /tmp/screen.png
+npx --no-install expo-agent-bridge logs
+npx --no-install expo-agent-bridge navigate /settings
+npx --no-install expo-agent-bridge scroll down 300
+```
+
+If multiple Expo apps are running, each app must use a distinct Metro port. For
+example, initialize this project with `npx --no-install expo-agent-bridge init
+--metro-port 8082` and start Expo with `npx expo start --port 8082`.
+
+| CLI command | Description |
 |---|---|
-| `get_screenshot()` | Captures current mobile screen as PNG — primary visual feedback |
-| `get_logs(level?, limit?)` | Streams recent `console.error`, `console.warn`, and unhandled JS exceptions |
-| `reload()` | Reloads app bundle on device (Metro broadcast + DevSettings.reload) |
-| `get_route()` | Returns current active route, pathname, and segments from Expo Router |
-| `get_elements()` | Lists currently mounted interactive UI elements (testIDs, titles, types) |
-| `get_state()` | Inspects custom app state or stores exposed to bridge |
-| `reset_storage()` | Clears AsyncStorage to test clean first-time install experience |
-| `open_dev_menu()` | Opens developer menu on device without shaking |
-| `navigate(route)` | Pushes an Expo Router route |
-| `tap(target)` | Presses a component by its `testID` prop |
-| `scroll(direction, amount?)` | Scrolls active scroll view up or down |
-| `type_text(target, text)` | Types into a TextInput by its `testID` prop |
+| `screenshot [file]` | Captures the current mobile screen as a PNG |
+| `logs` | Streams recent errors, warnings, and exceptions |
+| `reload` | Reloads the app bundle on the device |
+| `route` | Returns the current route |
+| `elements` | Lists mounted interactive elements |
+| `state` | Inspects custom app state |
+| `reset-storage` | Clears AsyncStorage |
+| `dev-menu` | Opens the developer menu |
+| `navigate <route>` | Navigates to an Expo Router route |
+| `tap <testID>` | Presses an element by test ID |
+| `scroll <up\|down> [amount]` | Scrolls the active view |
+| `type-text <testID> <text>` | Types into a TextInput |
 
 ## Standard Agentic UI/UX Loop
 

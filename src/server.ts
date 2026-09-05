@@ -145,6 +145,12 @@ export function startAgentBridgeMcpServer(options: ServerOptions = {}) {
       throw new Error('DevTools connection not ready. Is expo running and the dev app open on phone/simulator?');
     }
 
+    // The app-side DevTools listener needs a brief moment after the broadcast
+    // handshake before it can reliably receive the first command. The direct
+    // CLI uses the same delay; keeping both transports aligned avoids a
+    // first-call race in MCP clients.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
     const id = String(++commandSeq);
     const cmd = { id, action, ...params };
 

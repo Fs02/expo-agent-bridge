@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { startAgentBridgeMcpServer } from './server';
+import { sendBridgeCommand, writeScreenshot } from './client';
 
 type Json = Record<string, unknown>;
 export type AgentProfileName = 'antigravity' | 'claude-code' | 'cursor' | 'windsurf';
@@ -22,6 +23,8 @@ export type InitOptions = {
   agent: AgentProfileName;
   skillDirectory?: string;
   mcpConfigPath?: string;
+  metroPort?: number;
+  mcp: boolean;
   force: boolean;
 };
 
@@ -32,12 +35,45 @@ export function runCli(args: string[], cwd = process.cwd()): void {
     if (initArgs.includes('--help') || initArgs.includes('-h')) printHelp();
     else runInit(cwd, parseInitOptions(initArgs));
   }
-  else if (command === 'mcp' || command === 'start') startAgentBridgeMcpServer();
+  else if (command === 'mcp' || command === 'start') startAgentBridgeMcpServer({ metroPort: parseMetroPort(args.slice(1)) });
+  else if (DIRECT_COMMANDS.has(command)) void runDirectCommand(command, args.slice(1), cwd);
   else printHelp();
 }
 
+const DIRECT_COMMANDS = new Set(['screenshot', 'logs', 'reload', 'route', 'elements', 'state', 'reset-storage', 'dev-menu', 'navigate', 'tap', 'scroll', 'type-text']);
+
+async function runDirectCommand(command: string, args: string[], cwd: string): Promise<void> {
+  try {
+    if (command === 'screenshot') {
+      const output = path.resolve(cwd, args[0] ?? 'expo-agent-screenshot.png');
+      writeScreenshot(await sendBridgeCommand('screenshot'), output);
+      console.log(output);
+      return;
+    }
+    if (command === 'reload') { await sendBridgeCommand('reload'); console.log('App reload triggered.'); return; }
+    if (command === 'dev-menu') { await sendBridgeCommand('open_dev_menu'); console.log('Developer menu triggered.'); return; }
+    if (command === 'navigate') { const route = requiredArg(command, args, 0); await sendBridgeCommand('navigate', { route }); console.log(`Navigated to ${route}`); return; }
+    if (command === 'tap') { const target = requiredArg(command, args, 0); await sendBridgeCommand('tap', { target }); console.log(`Tapped ${target}`); return; }
+    if (command === 'type-text') { const target = requiredArg(command, args, 0); const text = requiredArg(command, args, 1); await sendBridgeCommand('type', { target, text }); console.log(`Typed into ${target}`); return; }
+    if (command === 'scroll') { const direction = requiredArg(command, args, 0); const amount = Number(args[1] ?? 300); await sendBridgeCommand('scroll', { direction, amount }); console.log(`Scrolled ${direction} ${amount}px`); return; }
+    if (command === 'reset-storage') { await sendBridgeCommand('reset_storage'); console.log('AsyncStorage cleared.'); return; }
+    const action = command === 'logs' ? 'get_logs' : command === 'route' ? 'get_route' : command === 'elements' ? 'get_elements' : 'get_state';
+    const result = await sendBridgeCommand(action);
+    const key = action === 'get_route' ? 'route' : action === 'get_elements' ? 'elements' : action === 'get_state' ? 'state' : 'logs';
+    console.log(JSON.stringify(result[key] ?? result, null, 2));
+  } catch (error: any) {
+    process.stderr.write(`[expo-agent-bridge] ${error.message}\n`);
+    process.exitCode = 1;
+  }
+}
+
+function requiredArg(command: string, args: string[], index: number): string {
+  if (!args[index]) throw new Error(`${command} requires argument ${index + 1}.`);
+  return args[index];
+}
+
 export function parseInitOptions(args: string[]): InitOptions {
-  const options: InitOptions = { agent: 'antigravity', force: false };
+  const options: InitOptions = { agent: 'antigravity', force: false, mcp: true };
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     const next = () => {
@@ -51,6 +87,9 @@ export function parseInitOptions(args: string[]): InitOptions {
     else if (argument.startsWith('--skills-dir=')) options.skillDirectory = argument.slice('--skills-dir='.length);
     else if (argument === '--mcp-config') options.mcpConfigPath = next();
     else if (argument.startsWith('--mcp-config=')) options.mcpConfigPath = argument.slice('--mcp-config='.length);
+    else if (argument === '--metro-port') options.metroPort = parsePort(next());
+    else if (argument.startsWith('--metro-port=')) options.metroPort = parsePort(argument.slice('--metro-port='.length));
+    else if (argument === '--no-mcp') options.mcp = false;
     else if (argument === '--force') options.force = true;
     else throw new Error(`Unknown init option: ${argument}`);
   }
@@ -70,10 +109,25 @@ export function runInit(cwd: string, options: InitOptions): void {
 
   const config = readJsonObject(mcpConfigPath);
   const mcpServers = isObject(config.mcpServers) ? config.mcpServers : {};
-  mcpServers['expo-agent-bridge'] = { command: 'npx', args: ['expo-agent-bridge', 'mcp'] };
-  config.mcpServers = mcpServers;
-  writeFile(mcpConfigPath, JSON.stringify(config, null, 2) + '\n');
-  console.log(`✓ Configured ${displayProjectPath(cwd, mcpConfigPath)}`);
+  delete mcpServers['kuso-agent-bridge'];
+  delete mcpServers['khusoo-dev-bridge'];
+  if (options.mcp) {
+    const bridgeServer: Json = {
+      command: 'npx',
+      args: ['--no-install', 'expo-agent-bridge', 'mcp'],
+    };
+    if (options.metroPort) bridgeServer.env = { EXPO_METRO_PORT: String(options.metroPort) };
+    mcpServers['expo-agent-bridge'] = bridgeServer;
+  } else {
+    delete mcpServers['expo-agent-bridge'];
+  }
+  if (Object.keys(mcpServers).length > 0) {
+    config.mcpServers = mcpServers;
+    writeFile(mcpConfigPath, JSON.stringify(config, null, 2) + '\n');
+  } else if (fs.existsSync(mcpConfigPath)) {
+    fs.unlinkSync(mcpConfigPath);
+  }
+  console.log(`✓ ${options.mcp ? 'Configured' : 'Removed'} MCP bridge in ${displayProjectPath(cwd, mcpConfigPath)}`);
 
   const skillPath = path.join(skillDirectory, 'expo-agent-bridge', 'SKILL.md');
   if (fs.existsSync(skillPath) && !options.force) {
@@ -83,7 +137,7 @@ export function runInit(cwd: string, options: InitOptions): void {
     console.log(`✓ Generated ${displayProjectPath(cwd, skillPath)}`);
   }
 
-  console.log(`\nSuccess! expo-agent-bridge is configured for ${profile.name}.\n\nNext steps:\n1. Mount <AgentBridge /> in your root layout.\n2. If Expo is not already running, start it with 'npx expo start' (or '--tunnel' on WSL).\n3. Open the dev app on your phone or simulator.\n4. Your AI agent can now take screenshots, inspect logs, and navigate!\n`);
+  console.log(`\nSuccess! expo-agent-bridge is configured for ${profile.name}.\n\nNext steps:\n1. Mount <AgentBridge /> in your root layout.\n2. If Expo is not already running, start it with 'npx expo start' (or '--tunnel' on WSL).\n3. Open the dev app on your phone or simulator.\n4. Try MCP first; if it is unavailable, use 'npx --no-install expo-agent-bridge screenshot /tmp/screen.png' or another direct CLI command.\n`);
 }
 
 function resolveProjectPath(cwd: string, input: string, flag: string): string {
@@ -119,13 +173,27 @@ function displayProjectPath(cwd: string, file: string): string {
   return path.relative(cwd, file) || path.basename(file);
 }
 
+function parseMetroPort(args: string[]): number | undefined {
+  const index = args.findIndex((argument) => argument === '--metro-port' || argument === '--port' || argument.startsWith('--metro-port=') || argument.startsWith('--port='));
+  if (index < 0) return undefined;
+  const argument = args[index];
+  const value = argument.includes('=') ? argument.slice(argument.indexOf('=') + 1) : args[index + 1];
+  return parsePort(value);
+}
+
+function parsePort(value: string | undefined): number {
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`Invalid Metro port "${value}". Use a number from 1 to 65535.`);
+  return port;
+}
+
 function loadSkillTemplate(): string {
   const templatePath = path.join(__dirname, '..', 'skills', 'expo-agent-bridge', 'SKILL.md');
   return fs.existsSync(templatePath) ? fs.readFileSync(templatePath, 'utf8') : defaultSkillContent();
 }
 
 function printHelp(): void {
-  console.log(`\nexpo-agent-bridge CLI\n\nCommands:\n  mcp      Start the MCP stdio server (default)\n  init     Configure an MCP server and agent skill in the current project\n\nInit options:\n  --agent <name>       antigravity (default), claude-code, cursor, or windsurf\n  --skills-dir <path>  Override the profile's skill directory\n  --mcp-config <path>  Override the profile's MCP configuration file\n  --force              Replace an existing bridge SKILL.md\n\nExamples:\n  npx expo-agent-bridge init --agent claude-code\n  npx expo-agent-bridge init --skills-dir .agents/skills\n`);
+  console.log(`\nexpo-agent-bridge CLI\n\nCommands:\n  mcp [--metro-port <port>]  Start the MCP stdio server (default port: 8081)\n  init     Configure MCP plus CLI fallback and the agent skill\n  screenshot [file]  Save a screenshot\n  logs | route | elements | state\n  reload | reset-storage | dev-menu\n  navigate <route> | tap <testID> | scroll <up|down> [amount]\n  type-text <testID> <text>\n\nInit options:\n  --agent <name>       antigravity (default), claude-code, cursor, or windsurf\n  --skills-dir <path>  Override the profile's skill directory\n  --mcp-config <path>  Override the profile's MCP configuration file\n  --metro-port <port>  Metro port for this app (use a unique port per app)\n  --no-mcp             Configure CLI only\n  --force              Replace an existing bridge SKILL.md\n\nExamples:\n  npx expo-agent-bridge screenshot /tmp/screen.png\n  npx expo-agent-bridge navigate /settings\n  npx expo-agent-bridge init --metro-port 8082\n`);
 }
 
 function defaultSkillContent(): string {
