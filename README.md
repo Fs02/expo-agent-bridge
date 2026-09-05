@@ -145,4 +145,4 @@ Metro Dev Server (Standard Expo Bundler)
 
 ## 📄 License
 
-MIT © Surya
+MIT © Fs02
