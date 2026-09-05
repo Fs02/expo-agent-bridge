@@ -307,6 +307,7 @@ function DevAgentBridgeImpl({ pluginName }: { pluginName: string }) {
 
     activeClient = client;
     console.log(`[AgentBridge] Connected via DevTools Plugin (${pluginName}) ✓`);
+    recordLog('log', `AgentBridge initialized and connected (${pluginName})`);
 
     subRef.current = client.addMessageListener('command', async (cmd: Record<string, any>) => {
       let result: Record<string, any>;
