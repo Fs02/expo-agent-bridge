@@ -104,10 +104,11 @@ if (typeof __DEV__ !== 'undefined' && __DEV__ && !(global as any).__expoAgentBri
 
   const originalError = console.error;
   const originalWarn = console.warn;
+  const originalLog = console.log;
 
   console.error = (...args: any[]) => {
     const msg = formatArgs(args);
-    if (!msg.startsWith('[AgentBridge]')) {
+    if (!msg.startsWith('[AgentBridge]') && !msg.startsWith('[DevAgentBridge]')) {
       const errorObj = args.find((a) => a instanceof Error);
       recordLog('error', msg, errorObj?.stack);
     }
@@ -116,10 +117,18 @@ if (typeof __DEV__ !== 'undefined' && __DEV__ && !(global as any).__expoAgentBri
 
   console.warn = (...args: any[]) => {
     const msg = formatArgs(args);
-    if (!msg.startsWith('[AgentBridge]')) {
+    if (!msg.startsWith('[AgentBridge]') && !msg.startsWith('[DevAgentBridge]')) {
       recordLog('warn', msg);
     }
     originalWarn(...args);
+  };
+
+  console.log = (...args: any[]) => {
+    const msg = formatArgs(args);
+    if (!msg.startsWith('[AgentBridge]') && !msg.startsWith('[DevAgentBridge]')) {
+      recordLog('log', msg);
+    }
+    originalLog(...args);
   };
 
   const ErrorUtils = (global as any).ErrorUtils;
