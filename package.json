@@ -1,0 +1,66 @@
+{
+  "name": "expo-agent-bridge",
+  "version": "0.1.0",
+  "description": "Autonomous AI coding agent bridge for Expo and React Native apps. Live visual feedback, logs, navigation, and element interaction without cables.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "expo-agent-bridge": "bin/cli.js"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "skills",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "expo",
+    "react-native",
+    "ai",
+    "agent",
+    "mcp",
+    "devtools",
+    "ui-ux",
+    "antigravity",
+    "cursor",
+    "claude-code",
+    "windsurf"
+  ],
+  "author": "Surya",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Fs02/expo-agent-bridge"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.24.0 || ^4.0.0"
+  },
+  "peerDependencies": {
+    "@expo/devtools": ">=50.0.0",
+    "expo": ">=50.0.0",
+    "react": ">=18.0.0",
+    "react-native": ">=0.73.0",
+    "react-native-view-shot": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "expo-router": {
+      "optional": true
+    },
+    "@react-native-async-storage/async-storage": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.2.0 || ^19.0.0",
+    "@types/react-native": "^0.73.0",
+    "typescript": "^5.3.0"
+  }
+}
