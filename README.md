@@ -21,10 +21,14 @@ Give AI coding agents (Antigravity, Cursor, Claude Code, Windsurf, Devin) comple
 
 ## 🚀 Quickstart
 
-### 1. Install in your Expo project
+### 1. Install as a dev dependency in your Expo project
 
 ```bash
-npx expo install expo-agent-bridge react-native-view-shot
+# Using npm
+npm install --save-dev expo-agent-bridge react-native-view-shot
+
+# Using yarn
+yarn add --dev expo-agent-bridge react-native-view-shot
 ```
 
 ### 2. Initialize Agent Config & Skills
