@@ -38,6 +38,12 @@ from that checkout:
 yarn add expo-agent-bridge@file:../expo-agent-bridge react-native-view-shot
 ```
 
+This local-file setup is for development only. Do not leave a `file:../…`
+bridge dependency in an EAS or other remote production build: the sibling
+checkout is not part of the build upload. Use a published package there, or
+remove the bridge from the release dependency graph and resolve it only in
+local development.
+
 ### 2. Initialize Agent Config & Skills
 
 Run in your project root:
@@ -92,20 +98,31 @@ CLI-only project, use `npx expo-agent-bridge init --no-mcp`.
 
 ### 3. Mount in your Root Layout
 
-In your root layout (e.g. `app/_layout.tsx` or `App.tsx`):
+In your root layout (e.g. `app/_layout.tsx` or `App.tsx`), load the component
+only in development:
 
 ```tsx
-import { AgentBridge } from 'expo-agent-bridge';
+import React from 'react';
+
+// Keeps the bridge component out of the production module graph.
+const DevAgentBridge = __DEV__
+  ? (require('expo-agent-bridge').AgentBridge as React.ComponentType)
+  : null;
 
 export default function RootLayout() {
   return (
     <>
-      <AgentBridge />
+      {__DEV__ && DevAgentBridge ? <DevAgentBridge /> : null}
       {/* Rest of your app */}
     </>
   );
 }
 ```
+
+The package still has to be resolvable when Metro builds a development bundle.
+For remote release builds, either use a published package or configure Metro
+to map `expo-agent-bridge` to a local no-op module, as the app's release setup
+requires.
 
 ### 4. Run Expo
 

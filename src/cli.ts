@@ -139,7 +139,7 @@ export function runInit(cwd: string, options: InitOptions): void {
     console.log(`✓ Generated ${displayProjectPath(cwd, skillPath)}`);
   }
 
-  console.log(`\nSuccess! expo-agent-bridge is configured for ${profile.name}.\n\nNext steps:\n1. Mount <AgentBridge /> in your root layout.\n2. If Expo is not already running, start it with 'npx expo start' (or '--tunnel' on WSL).\n3. Open the dev app on your phone or simulator.\n4. Try MCP first; if it is unavailable, use 'npx --no-install expo-agent-bridge screenshot /tmp/screen.png' or another direct CLI command.\n`);
+  console.log(`\nSuccess! expo-agent-bridge is configured for ${profile.name}.\n\nNext steps:\n1. Mount <AgentBridge /> only behind a __DEV__ lazy require in your root layout.\n2. If Expo is not already running, start it with 'npx expo start' (or '--tunnel' on WSL).\n3. Open the dev app on your phone or simulator.\n4. Try MCP first; if it is unavailable, use 'npx --no-install expo-agent-bridge screenshot /tmp/screen.png' or another direct CLI command.\n`);
 }
 
 function resolveProjectPath(cwd: string, input: string, flag: string): string {
