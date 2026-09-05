@@ -66,6 +66,14 @@ npx expo-agent-bridge init --metro-port 8082
 ```
 
 Start that app on the same port, for example `npx expo start --port 8082`.
+
+For direct CLI commands, pass the same port with `--metro-port <port>` (or `--port <port>`). The option may appear anywhere after the command:
+
+```bash
+npx expo-agent-bridge screenshot /tmp/screen.png --metro-port 8082
+npx expo-agent-bridge navigate /settings --metro-port=8082
+```
+
 The generated MCP configuration pins the bridge to that project’s port.
 
 Each profile writes its MCP configuration and skill to that agent's project directory.

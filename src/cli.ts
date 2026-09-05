@@ -28,7 +28,7 @@ export type InitOptions = {
   force: boolean;
 };
 
-export function runCli(args: string[], cwd = process.cwd()): void {
+export function runCli(args: string[], cwd = process.cwd()): void | Promise<void> {
   const command = args[0] || 'mcp';
   if (command === 'init') {
     const initArgs = args.slice(1);
@@ -36,29 +36,31 @@ export function runCli(args: string[], cwd = process.cwd()): void {
     else runInit(cwd, parseInitOptions(initArgs));
   }
   else if (command === 'mcp' || command === 'start') startAgentBridgeMcpServer({ metroPort: parseMetroPort(args.slice(1)) });
-  else if (DIRECT_COMMANDS.has(command)) void runDirectCommand(command, args.slice(1), cwd);
+  else if (DIRECT_COMMANDS.has(command)) return runDirectCommand(command, args.slice(1), cwd);
   else printHelp();
 }
 
 const DIRECT_COMMANDS = new Set(['screenshot', 'logs', 'reload', 'route', 'elements', 'state', 'reset-storage', 'dev-menu', 'navigate', 'tap', 'scroll', 'type-text']);
 
-async function runDirectCommand(command: string, args: string[], cwd: string): Promise<void> {
+export async function runDirectCommand(command: string, args: string[], cwd: string): Promise<void> {
   try {
+    const { positional, metroPort } = extractMetroPort(args);
+    const clientOptions = { metroPort };
     if (command === 'screenshot') {
-      const output = path.resolve(cwd, args[0] ?? 'expo-agent-screenshot.png');
-      writeScreenshot(await sendBridgeCommand('screenshot'), output);
+      const output = path.resolve(cwd, positional[0] ?? 'expo-agent-screenshot.png');
+      writeScreenshot(await sendBridgeCommand('screenshot', {}, clientOptions), output);
       console.log(output);
       return;
     }
-    if (command === 'reload') { await sendBridgeCommand('reload'); console.log('App reload triggered.'); return; }
-    if (command === 'dev-menu') { await sendBridgeCommand('open_dev_menu'); console.log('Developer menu triggered.'); return; }
-    if (command === 'navigate') { const route = requiredArg(command, args, 0); await sendBridgeCommand('navigate', { route }); console.log(`Navigated to ${route}`); return; }
-    if (command === 'tap') { const target = requiredArg(command, args, 0); await sendBridgeCommand('tap', { target }); console.log(`Tapped ${target}`); return; }
-    if (command === 'type-text') { const target = requiredArg(command, args, 0); const text = requiredArg(command, args, 1); await sendBridgeCommand('type', { target, text }); console.log(`Typed into ${target}`); return; }
-    if (command === 'scroll') { const direction = requiredArg(command, args, 0); const amount = Number(args[1] ?? 300); await sendBridgeCommand('scroll', { direction, amount }); console.log(`Scrolled ${direction} ${amount}px`); return; }
-    if (command === 'reset-storage') { await sendBridgeCommand('reset_storage'); console.log('AsyncStorage cleared.'); return; }
+    if (command === 'reload') { await sendBridgeCommand('reload', {}, clientOptions); console.log('App reload triggered.'); return; }
+    if (command === 'dev-menu') { await sendBridgeCommand('open_dev_menu', {}, clientOptions); console.log('Developer menu triggered.'); return; }
+    if (command === 'navigate') { const route = requiredArg(command, positional, 0); await sendBridgeCommand('navigate', { route }, clientOptions); console.log(`Navigated to ${route}`); return; }
+    if (command === 'tap') { const target = requiredArg(command, positional, 0); await sendBridgeCommand('tap', { target }, clientOptions); console.log(`Tapped ${target}`); return; }
+    if (command === 'type-text') { const target = requiredArg(command, positional, 0); const text = requiredArg(command, positional, 1); await sendBridgeCommand('type', { target, text }, clientOptions); console.log(`Typed into ${target}`); return; }
+    if (command === 'scroll') { const direction = requiredArg(command, positional, 0); const amount = Number(positional[1] ?? 300); await sendBridgeCommand('scroll', { direction, amount }, clientOptions); console.log(`Scrolled ${direction} ${amount}px`); return; }
+    if (command === 'reset-storage') { await sendBridgeCommand('reset_storage', {}, clientOptions); console.log('AsyncStorage cleared.'); return; }
     const action = command === 'logs' ? 'get_logs' : command === 'route' ? 'get_route' : command === 'elements' ? 'get_elements' : 'get_state';
-    const result = await sendBridgeCommand(action);
+    const result = await sendBridgeCommand(action, {}, clientOptions);
     const key = action === 'get_route' ? 'route' : action === 'get_elements' ? 'elements' : action === 'get_state' ? 'state' : 'logs';
     console.log(JSON.stringify(result[key] ?? result, null, 2));
   } catch (error: any) {
@@ -173,12 +175,27 @@ function displayProjectPath(cwd: string, file: string): string {
   return path.relative(cwd, file) || path.basename(file);
 }
 
+export function extractMetroPort(args: string[]): { positional: string[]; metroPort?: number } {
+  const positional: string[] = [];
+  let metroPort: number | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    const isSeparateFlag = argument === '--metro-port' || argument === '--port';
+    const isEqualsFlag = argument.startsWith('--metro-port=') || argument.startsWith('--port=');
+    if (!isSeparateFlag && !isEqualsFlag) {
+      positional.push(argument);
+      continue;
+    }
+    if (metroPort !== undefined) throw new Error('Specify Metro port only once.');
+    const value = isSeparateFlag ? args[++index] : argument.slice(argument.indexOf('=') + 1);
+    if (!value || value.startsWith('--')) throw new Error(`${argument} requires a value.`);
+    metroPort = parsePort(value);
+  }
+  return { positional, metroPort };
+}
+
 function parseMetroPort(args: string[]): number | undefined {
-  const index = args.findIndex((argument) => argument === '--metro-port' || argument === '--port' || argument.startsWith('--metro-port=') || argument.startsWith('--port='));
-  if (index < 0) return undefined;
-  const argument = args[index];
-  const value = argument.includes('=') ? argument.slice(argument.indexOf('=') + 1) : args[index + 1];
-  return parsePort(value);
+  return extractMetroPort(args).metroPort;
 }
 
 function parsePort(value: string | undefined): number {
@@ -193,7 +210,7 @@ function loadSkillTemplate(): string {
 }
 
 function printHelp(): void {
-  console.log(`\nexpo-agent-bridge CLI\n\nCommands:\n  mcp [--metro-port <port>]  Start the MCP stdio server (default port: 8081)\n  init     Configure MCP plus CLI fallback and the agent skill\n  screenshot [file]  Save a screenshot\n  logs | route | elements | state\n  reload | reset-storage | dev-menu\n  navigate <route> | tap <testID> | scroll <up|down> [amount]\n  type-text <testID> <text>\n\nInit options:\n  --agent <name>       antigravity (default), claude-code, cursor, or windsurf\n  --skills-dir <path>  Override the profile's skill directory\n  --mcp-config <path>  Override the profile's MCP configuration file\n  --metro-port <port>  Metro port for this app (use a unique port per app)\n  --no-mcp             Configure CLI only\n  --force              Replace an existing bridge SKILL.md\n\nExamples:\n  npx expo-agent-bridge screenshot /tmp/screen.png\n  npx expo-agent-bridge navigate /settings\n  npx expo-agent-bridge init --metro-port 8082\n`);
+  console.log(`\nexpo-agent-bridge CLI\n\nCommands:\n  mcp [--metro-port <port>]  Start the MCP stdio server (default port: 8081)\n  init     Configure MCP plus CLI fallback and the agent skill\n  screenshot [file]  Save a screenshot\n  logs | route | elements | state\n  reload | reset-storage | dev-menu\n  navigate <route> | tap <testID> | scroll <up|down> [amount]\n  type-text <testID> <text>\n\nDirect command options (accepted after the command in any position):\n  --metro-port <port>  Metro port for this app (alias: --port)\n\nInit options:\n  --agent <name>       antigravity (default), claude-code, cursor, or windsurf\n  --skills-dir <path>  Override the profile's skill directory\n  --mcp-config <path>  Override the profile's MCP configuration file\n  --metro-port <port>  Metro port for this app (use a unique port per app)\n  --no-mcp             Configure CLI only\n  --force              Replace an existing bridge SKILL.md\n\nExamples:\n  npx expo-agent-bridge screenshot /tmp/screen.png --metro-port 8082\n  npx expo-agent-bridge navigate /settings --metro-port=8082\n  npx expo-agent-bridge init --metro-port 8082\n`);
 }
 
 function defaultSkillContent(): string {
