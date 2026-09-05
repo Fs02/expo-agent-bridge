@@ -2,118 +2,141 @@ import fs from 'fs';
 import path from 'path';
 import { startAgentBridgeMcpServer } from './server';
 
-const args = process.argv.slice(2);
-const command = args[0] || 'mcp';
+type Json = Record<string, unknown>;
+export type AgentProfileName = 'antigravity' | 'claude-code' | 'cursor' | 'windsurf';
 
-if (command === 'init') {
-  runInit();
-} else if (command === 'mcp' || command === 'start') {
-  startAgentBridgeMcpServer();
-} else {
-  console.log(`
-expo-agent-bridge CLI
-
-Commands:
-  mcp      Start the MCP stdio server (default)
-  init     Set up .agents/mcp_config.json and .agents/skills in the current project
-`);
+export interface AgentProfile {
+  name: AgentProfileName;
+  mcpConfigPath: string;
+  skillDirectory: string;
 }
 
-function runInit() {
-  const cwd = process.cwd();
-  console.log('[expo-agent-bridge] Initializing agent bridge in:', cwd);
+const AGENT_PROFILES: Record<AgentProfileName, AgentProfile> = {
+  antigravity: { name: 'antigravity', mcpConfigPath: '.agents/mcp_config.json', skillDirectory: '.agents/skills' },
+  'claude-code': { name: 'claude-code', mcpConfigPath: '.mcp.json', skillDirectory: '.claude/skills' },
+  cursor: { name: 'cursor', mcpConfigPath: '.cursor/mcp.json', skillDirectory: '.cursor/skills' },
+  windsurf: { name: 'windsurf', mcpConfigPath: '.windsurf/mcp_config.json', skillDirectory: '.windsurf/skills' },
+};
 
-  // 1. Create .agents/mcp_config.json
-  const agentsDir = path.join(cwd, '.agents');
-  if (!fs.existsSync(agentsDir)) {
-    fs.mkdirSync(agentsDir, { recursive: true });
+export type InitOptions = {
+  agent: AgentProfileName;
+  skillDirectory?: string;
+  mcpConfigPath?: string;
+  force: boolean;
+};
+
+export function runCli(args: string[], cwd = process.cwd()): void {
+  const command = args[0] || 'mcp';
+  if (command === 'init') {
+    const initArgs = args.slice(1);
+    if (initArgs.includes('--help') || initArgs.includes('-h')) printHelp();
+    else runInit(cwd, parseInitOptions(initArgs));
   }
+  else if (command === 'mcp' || command === 'start') startAgentBridgeMcpServer();
+  else printHelp();
+}
 
-  const mcpConfigFile = path.join(agentsDir, 'mcp_config.json');
-  let config: any = { mcpServers: {} };
-  if (fs.existsSync(mcpConfigFile)) {
-    try {
-      config = JSON.parse(fs.readFileSync(mcpConfigFile, 'utf8'));
-    } catch {}
+export function parseInitOptions(args: string[]): InitOptions {
+  const options: InitOptions = { agent: 'antigravity', force: false };
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    const next = () => {
+      const value = args[++index];
+      if (!value || value.startsWith('--')) throw new Error(`${argument} requires a value.`);
+      return value;
+    };
+    if (argument === '--agent') options.agent = validateAgent(next());
+    else if (argument.startsWith('--agent=')) options.agent = validateAgent(argument.slice('--agent='.length));
+    else if (argument === '--skills-dir') options.skillDirectory = next();
+    else if (argument.startsWith('--skills-dir=')) options.skillDirectory = argument.slice('--skills-dir='.length);
+    else if (argument === '--mcp-config') options.mcpConfigPath = next();
+    else if (argument.startsWith('--mcp-config=')) options.mcpConfigPath = argument.slice('--mcp-config='.length);
+    else if (argument === '--force') options.force = true;
+    else throw new Error(`Unknown init option: ${argument}`);
   }
-  config.mcpServers = config.mcpServers || {};
-  config.mcpServers['expo-agent-bridge'] = {
-    command: 'npx',
-    args: ['expo-agent-bridge', 'mcp'],
-  };
-  fs.writeFileSync(mcpConfigFile, JSON.stringify(config, null, 2) + '\n');
-  console.log('✓ Configured .agents/mcp_config.json');
+  return options;
+}
 
-  // 2. Create .agents/skills/expo-agent-bridge/SKILL.md
-  const skillDir = path.join(agentsDir, 'skills', 'expo-agent-bridge');
-  if (!fs.existsSync(skillDir)) {
-    fs.mkdirSync(skillDir, { recursive: true });
-  }
+function validateAgent(agent: string): AgentProfileName {
+  if (agent in AGENT_PROFILES) return agent as AgentProfileName;
+  throw new Error(`Unsupported agent "${agent}". Choose one of: ${Object.keys(AGENT_PROFILES).join(', ')}.`);
+}
 
-  const skillPath = path.join(skillDir, 'SKILL.md');
-  const templatePath = path.join(__dirname, '..', 'skills', 'expo-agent-bridge', 'SKILL.md');
+export function runInit(cwd: string, options: InitOptions): void {
+  const profile = AGENT_PROFILES[options.agent];
+  const mcpConfigPath = resolveProjectPath(cwd, options.mcpConfigPath ?? profile.mcpConfigPath, '--mcp-config');
+  const skillDirectory = resolveProjectPath(cwd, options.skillDirectory ?? profile.skillDirectory, '--skills-dir');
+  console.log(`[expo-agent-bridge] Initializing for ${profile.name} in: ${cwd}`);
 
-  let skillContent = '';
-  if (fs.existsSync(templatePath)) {
-    skillContent = fs.readFileSync(templatePath, 'utf8');
+  const config = readJsonObject(mcpConfigPath);
+  const mcpServers = isObject(config.mcpServers) ? config.mcpServers : {};
+  mcpServers['expo-agent-bridge'] = { command: 'npx', args: ['expo-agent-bridge', 'mcp'] };
+  config.mcpServers = mcpServers;
+  writeFile(mcpConfigPath, JSON.stringify(config, null, 2) + '\n');
+  console.log(`✓ Configured ${displayProjectPath(cwd, mcpConfigPath)}`);
+
+  const skillPath = path.join(skillDirectory, 'expo-agent-bridge', 'SKILL.md');
+  if (fs.existsSync(skillPath) && !options.force) {
+    console.log(`• Kept existing ${displayProjectPath(cwd, skillPath)} (use --force to replace it)`);
   } else {
-    skillContent = defaultSkillContent();
+    writeFile(skillPath, loadSkillTemplate());
+    console.log(`✓ Generated ${displayProjectPath(cwd, skillPath)}`);
   }
 
-  fs.writeFileSync(skillPath, skillContent);
-  console.log('✓ Generated .agents/skills/expo-agent-bridge/SKILL.md');
+  console.log(`\nSuccess! expo-agent-bridge is configured for ${profile.name}.\n\nNext steps:\n1. Mount <AgentBridge /> in your root layout.\n2. If Expo is not already running, start it with 'npx expo start' (or '--tunnel' on WSL).\n3. Open the dev app on your phone or simulator.\n4. Your AI agent can now take screenshots, inspect logs, and navigate!\n`);
+}
 
-  console.log(`
-Success! expo-agent-bridge is configured for this project.
+function resolveProjectPath(cwd: string, input: string, flag: string): string {
+  const resolved = path.resolve(cwd, input);
+  const relative = path.relative(cwd, resolved);
+  if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error(`${flag} must stay inside the project directory.`);
+  }
+  return resolved;
+}
 
-Next steps:
-1. In your root layout (e.g. app/_layout.tsx), mount <AgentBridge />:
-   import { AgentBridge } from 'expo-agent-bridge';
-   // Inside root component:
-   <AgentBridge />
+function readJsonObject(file: string): Json {
+  if (!fs.existsSync(file)) return {};
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (!isObject(parsed)) throw new Error('Expected a JSON object.');
+    return parsed;
+  } catch (error: any) {
+    throw new Error(`Could not read ${file}: ${error.message}`);
+  }
+}
 
-2. Run 'npx expo start' (or 'npx expo start --tunnel' on WSL)
-3. Open the dev app on your phone.
-4. Your AI agent can now take screenshots, inspect logs, and navigate!
-`);
+function isObject(value: unknown): value is Json {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function writeFile(file: string, content: string): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, content);
+}
+
+function displayProjectPath(cwd: string, file: string): string {
+  return path.relative(cwd, file) || path.basename(file);
+}
+
+function loadSkillTemplate(): string {
+  const templatePath = path.join(__dirname, '..', 'skills', 'expo-agent-bridge', 'SKILL.md');
+  return fs.existsSync(templatePath) ? fs.readFileSync(templatePath, 'utf8') : defaultSkillContent();
+}
+
+function printHelp(): void {
+  console.log(`\nexpo-agent-bridge CLI\n\nCommands:\n  mcp      Start the MCP stdio server (default)\n  init     Configure an MCP server and agent skill in the current project\n\nInit options:\n  --agent <name>       antigravity (default), claude-code, cursor, or windsurf\n  --skills-dir <path>  Override the profile's skill directory\n  --mcp-config <path>  Override the profile's MCP configuration file\n  --force              Replace an existing bridge SKILL.md\n\nExamples:\n  npx expo-agent-bridge init --agent claude-code\n  npx expo-agent-bridge init --skills-dir .agents/skills\n`);
 }
 
 function defaultSkillContent(): string {
-  return `---
-name: expo-agent-bridge
-description: >-
-  Use when doing UI/UX work on Expo & React Native apps. Teaches how to use the agent
-  dev bridge to see live mobile screens, stream console logs & errors, and interact over Wi-Fi or
-  WSL+--tunnel — screenshot, logs, reload, navigate, tap, scroll — no cables.
----
+  return `---\nname: expo-agent-bridge\ndescription: Expo and React Native visual feedback and interaction bridge.\n---\n\n# Expo Agent Dev Bridge\n\nLive visual feedback and interactive UI loop for React Native & Expo apps.\n\n## Server Ownership\n\nAttach to an existing Expo/Metro server by default. Do not start or restart the server unless the developer explicitly asks.\n`;
+}
 
-# Expo Agent Dev Bridge
-
-Live visual feedback and interactive UI loop for React Native & Expo apps.
-
-## Available Tools
-
-| Tool | Description |
-|---|---|
-| \`get_screenshot()\` | Captures current mobile screen as PNG — primary visual feedback |
-| \`get_logs(level?, limit?)\` | Streams recent \`console.error\`, \`console.warn\`, and unhandled JS exceptions |
-| \`reload()\` | Reloads app bundle on device (Metro broadcast + DevSettings.reload) |
-| \`get_route()\` | Returns current active route, pathname, and segments from Expo Router |
-| \`get_elements()\` | Lists currently mounted interactive UI elements (testIDs, titles, types) |
-| \`get_state()\` | Inspects custom app state or stores exposed to bridge |
-| \`reset_storage()\` | Clears AsyncStorage to test clean first-time install experience |
-| \`open_dev_menu()\` | Opens developer menu on device without shaking |
-| \`navigate(route)\` | Pushes an Expo Router route |
-| \`tap(target)\` | Presses a component by its \`testID\` prop |
-| \`scroll(direction, amount?)\` | Scrolls active scroll view up or down |
-| \`type_text(target, text)\` | Types into a TextInput by its \`testID\` prop |
-
-## Standard Agentic UI/UX Loop
-
-1. \`get_screenshot()\` — observe current screen
-2. Edit code
-3. Wait 3s for Fast Refresh (or call \`reload()\` if stuck)
-4. \`get_screenshot()\` — verify visual changes
-5. Iterate or commit
-`;
+if (require.main === module) {
+  try {
+    runCli(process.argv.slice(2));
+  } catch (error: any) {
+    process.stderr.write(`[expo-agent-bridge] ${error.message}\n`);
+    process.exitCode = 1;
+  }
 }

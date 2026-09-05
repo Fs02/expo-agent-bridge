@@ -39,9 +39,28 @@ Run in your project root:
 npx expo-agent-bridge init
 ```
 
-This automatically generates:
+The default Antigravity profile generates:
 - `.agents/mcp_config.json` (MCP server configuration)
 - `.agents/skills/expo-agent-bridge/SKILL.md` (instructions for AI agents)
+
+Choose another supported agent profile when needed:
+
+```bash
+npx expo-agent-bridge init --agent claude-code
+npx expo-agent-bridge init --agent cursor
+npx expo-agent-bridge init --agent windsurf
+```
+
+Each profile writes its MCP configuration and skill to that agent's project directory.
+For an unsupported or custom agent, specify both locations directly:
+
+```bash
+npx expo-agent-bridge init \
+  --mcp-config .my-agent/mcp.json \
+  --skills-dir .my-agent/skills
+```
+
+Existing bridge skills are left untouched; pass `--force` to replace one.
 
 ### 3. Mount in your Root Layout
 

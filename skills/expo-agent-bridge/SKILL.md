@@ -11,6 +11,13 @@ description: >-
 Live visual feedback and interactive UI loop for React Native & Expo apps.
 Uses Expo's DevTools Plugin broadcast channel — zero native cables, zero extra tunnels, works over WSL.
 
+## Server Ownership
+
+Assume the developer already started Expo/Metro and has the dev app open. Attach to that existing
+server first; do **not** run `expo start`, restart Metro, or create a second dev server unless the
+developer explicitly asks. If the bridge cannot connect, report the connection failure and ask the
+developer to start or expose the server.
+
 ## Available Tools
 
 | Tool | Description |

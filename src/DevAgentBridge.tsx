@@ -27,7 +27,18 @@ export function registerElement(testID: string, handler: ElementHandler | React.
   if (handler && 'current' in handler) {
     elementRegistry.set(testID, { ref: handler });
   } else {
-    elementRegistry.set(testID, handler);
+    const originalOnPress = handler.onPress;
+    const wrappedHandler: ElementHandler = {
+      ...handler,
+      onPress: originalOnPress
+        ? () => {
+            const label = handler.title ? `"${handler.title}" (${testID})` : `"${testID}"`;
+            recordLog('log', `[Interaction] Pressed ${label}`);
+            return originalOnPress();
+          }
+        : undefined,
+    };
+    elementRegistry.set(testID, wrappedHandler);
   }
 }
 
@@ -125,9 +136,7 @@ if (typeof __DEV__ !== 'undefined' && __DEV__ && !(global as any).__expoAgentBri
 
   console.log = (...args: any[]) => {
     const msg = formatArgs(args);
-    if (!msg.startsWith('[AgentBridge]') && !msg.startsWith('[DevAgentBridge]')) {
-      recordLog('log', msg);
-    }
+    recordLog('log', msg);
     originalLog(...args);
   };
 
@@ -149,17 +158,22 @@ async function handleCommand(cmd: Record<string, any>): Promise<Record<string, a
 
   switch (action) {
     case 'screenshot': {
+      console.log('[expo-agent-bridge] ← screenshot');
+      recordLog('log', '[Bridge] Screenshot captured');
       const { captureScreen } = require('react-native-view-shot');
       const base64 = await captureScreen({ format: 'png', result: 'base64' });
       return { id, data: base64 };
     }
 
     case 'navigate': {
+      console.log(`[expo-agent-bridge] ← navigate ${cmd.route}`);
+      recordLog('log', `[Bridge] Navigate to ${cmd.route}`);
       try {
         const { router } = require('expo-router');
         router.push(cmd.route);
         return { id, success: true };
       } catch (e: any) {
+        recordLog('error', `[Bridge] Navigate error: ${e?.message}`);
         return { id, error: 'Expo Router not available: ' + e?.message };
       }
     }
@@ -194,6 +208,7 @@ async function handleCommand(cmd: Record<string, any>): Promise<Record<string, a
       try {
         const AsyncStorage = require('@react-native-async-storage/async-storage').default;
         await AsyncStorage.clear();
+        recordLog('log', '[Bridge] Storage reset cleared');
         return { id, success: true };
       } catch (err: any) {
         return { id, error: err.message };
@@ -210,20 +225,26 @@ async function handleCommand(cmd: Record<string, any>): Promise<Record<string, a
     }
 
     case 'tap': {
+      console.log(`[expo-agent-bridge] ← tap "${cmd.target}"`);
       const handler = elementRegistry.get(cmd.target as string);
       if (handler?.onPress) {
+        recordLog('log', `[Bridge] Tap "${cmd.target}" (${handler.title || 'button'})`);
         handler.onPress();
         return { id, success: true };
       }
       const node = handler?.ref?.current as any;
       if (typeof node?.props?.onPress === 'function') {
+        recordLog('log', `[Bridge] Tap "${cmd.target}" via ref`);
         node.props.onPress();
         return { id, success: true };
       }
+      recordLog('warn', `[Bridge] Tap "${cmd.target}" failed: not found in element registry`);
       return { id, success: false };
     }
 
     case 'scroll': {
+      console.log(`[expo-agent-bridge] ← scroll ${cmd.direction}`);
+      recordLog('log', `[Bridge] Scroll ${cmd.direction}`);
       for (const [, handler] of elementRegistry) {
         const node = handler?.ref?.current;
         if (node && 'scrollToEnd' in node) {
@@ -237,6 +258,8 @@ async function handleCommand(cmd: Record<string, any>): Promise<Record<string, a
     }
 
     case 'type': {
+      console.log(`[expo-agent-bridge] ← type "${cmd.target}": "${cmd.text}"`);
+      recordLog('log', `[Bridge] Type into "${cmd.target}": "${cmd.text}"`);
       const handler = elementRegistry.get(cmd.target as string);
       if (handler?.onChangeText) {
         handler.onChangeText(cmd.text as string);
@@ -255,6 +278,8 @@ async function handleCommand(cmd: Record<string, any>): Promise<Record<string, a
     }
 
     case 'reload': {
+      console.log('[expo-agent-bridge] ← reload');
+      recordLog('log', '[Bridge] App reload requested');
       if (typeof DevSettings?.reload === 'function') {
         DevSettings.reload('Agent requested reload');
       }
