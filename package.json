@@ -17,6 +17,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "prepare": "npm run build",
     "test": "npm run build && node --test test/**/*.test.js",
     "prepublishOnly": "npm run build"
   },
